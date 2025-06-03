@@ -1,9 +1,15 @@
+
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
+import Auth from "./pages/Auth";
+import JobseekerDashboard from "./pages/JobseekerDashboard";
+import HRDashboard from "./pages/HRDashboard";
+import Jobs from "./pages/Jobs";
+import AITools from "./pages/AITools";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -16,6 +22,11 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Index />} />
+          <Route path="/auth" element={<Auth />} />
+          <Route path="/jobs" element={<Jobs />} />
+          <Route path="/ai-tools" element={<AITools />} />
+          <Route path="/jobseeker/dashboard" element={<JobseekerDashboard />} />
+          <Route path="/hr/dashboard" element={<HRDashboard />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
