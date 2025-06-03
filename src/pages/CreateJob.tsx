@@ -11,6 +11,10 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/hooks/useAuth';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from "@/hooks/use-toast";
+import type { Database } from '@/integrations/supabase/types';
+
+type JobType = Database['public']['Enums']['job_type'];
+type ExperienceLevel = Database['public']['Enums']['experience_level'];
 
 const CreateJob = () => {
   const { user, userProfile } = useAuth();
@@ -27,8 +31,8 @@ const CreateJob = () => {
     location: '',
     salary_min: '',
     salary_max: '',
-    job_type: '',
-    experience_level: '',
+    job_type: '' as JobType,
+    experience_level: '' as ExperienceLevel,
     remote_allowed: false,
     application_deadline: ''
   });
@@ -41,16 +45,34 @@ const CreateJob = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!formData.job_type || !formData.experience_level) {
+      toast({
+        title: "Error",
+        description: "Please select job type and experience level.",
+        variant: "destructive"
+      });
+      return;
+    }
+    
     setIsLoading(true);
 
     try {
       const jobData = {
-        ...formData,
-        created_by: user.id,
+        title: formData.title,
+        company_name: formData.company_name,
+        description: formData.description,
+        requirements: formData.requirements || null,
+        responsibilities: formData.responsibilities || null,
+        benefits: formData.benefits || null,
+        location: formData.location || null,
         salary_min: formData.salary_min ? parseFloat(formData.salary_min) : null,
         salary_max: formData.salary_max ? parseFloat(formData.salary_max) : null,
+        job_type: formData.job_type,
+        experience_level: formData.experience_level,
+        remote_allowed: formData.remote_allowed,
         application_deadline: formData.application_deadline || null,
-        posted_at: new Date().toISOString(),
+        created_by: user.id,
         is_active: true
       };
 
@@ -157,7 +179,7 @@ const CreateJob = () => {
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-2">
                   <Label className="text-white">Job Type *</Label>
-                  <Select value={formData.job_type} onValueChange={(value) => handleInputChange('job_type', value)}>
+                  <Select value={formData.job_type} onValueChange={(value: JobType) => handleInputChange('job_type', value)} required>
                     <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
                       <SelectValue placeholder="Select job type" />
                     </SelectTrigger>
@@ -172,7 +194,7 @@ const CreateJob = () => {
 
                 <div className="space-y-2">
                   <Label className="text-white">Experience Level *</Label>
-                  <Select value={formData.experience_level} onValueChange={(value) => handleInputChange('experience_level', value)}>
+                  <Select value={formData.experience_level} onValueChange={(value: ExperienceLevel) => handleInputChange('experience_level', value)} required>
                     <SelectTrigger className="bg-slate-800/50 border-slate-700 text-white">
                       <SelectValue placeholder="Select experience level" />
                     </SelectTrigger>
@@ -189,14 +211,13 @@ const CreateJob = () => {
               {/* Location and Remote */}
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label htmlFor="location" className="text-white">Location *</Label>
+                  <Label htmlFor="location" className="text-white">Location</Label>
                   <Input
                     id="location"
                     placeholder="e.g. San Francisco, CA"
                     className="bg-slate-800/50 border-slate-700 text-white placeholder-slate-400"
                     value={formData.location}
                     onChange={(e) => handleInputChange('location', e.target.value)}
-                    required
                   />
                 </div>
 
