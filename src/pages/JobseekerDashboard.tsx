@@ -6,93 +6,131 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Search, Briefcase, MapPin, Clock, Star, TrendingUp, BookmarkIcon, Eye, Send, CheckCircle, AlertCircle, Calendar, DollarSign } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 
 const JobseekerDashboard = () => {
-  const [user, setUser] = useState<any>(null);
+  const { user, userProfile, signOut, loading } = useAuth();
+  const [applications, setApplications] = useState<any[]>([]);
+  const [savedJobs, setSavedJobs] = useState<any[]>([]);
   const [profileCompletion, setProfileCompletion] = useState(75);
+  const [stats, setStats] = useState({
+    applicationsSent: 0,
+    interviewInvites: 0,
+    profileViews: 0,
+    savedJobsCount: 0
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
-    const userData = localStorage.getItem('atsUser');
-    if (!userData) {
+    if (!loading && (!user || userProfile?.role !== 'job_seeker')) {
       navigate('/auth');
       return;
     }
-    
-    const parsedUser = JSON.parse(userData);
-    if (parsedUser.role !== 'jobseeker') {
-      navigate('/hr/dashboard');
-      return;
+
+    if (user && userProfile?.role === 'job_seeker') {
+      fetchApplications();
+      fetchSavedJobs();
     }
-    
-    setUser(parsedUser);
-  }, [navigate]);
+  }, [user, userProfile, loading, navigate]);
 
-  const applications = [
-    {
-      id: 1,
-      jobTitle: "Senior Frontend Developer",
-      company: "TechCorp Inc.",
-      location: "San Francisco, CA",
-      appliedDate: "2024-01-15",
-      status: "Interview Scheduled",
-      statusColor: "bg-blue-500",
-      salary: "$120K - $160K",
-      logo: "TC"
-    },
-    {
-      id: 2,
-      jobTitle: "React Developer",
-      company: "Startup Hub",
-      location: "Remote",
-      appliedDate: "2024-01-12",
-      status: "Under Review",
-      statusColor: "bg-yellow-500",
-      salary: "$90K - $130K",
-      logo: "SH"
-    },
-    {
-      id: 3,
-      jobTitle: "Full Stack Engineer",
-      company: "Innovation Labs",
-      location: "New York, NY",
-      appliedDate: "2024-01-10",
-      status: "Rejected",
-      statusColor: "bg-red-500",
-      salary: "$110K - $150K",
-      logo: "IL"
+  const fetchApplications = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('candidates')
+        .select(`
+          *,
+          job_postings (
+            id,
+            title,
+            company_name,
+            location,
+            salary_min,
+            salary_max
+          )
+        `)
+        .eq('candidate_id', user.id)
+        .order('applied_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching applications:', error);
+      } else {
+        setApplications(data || []);
+        setStats(prev => ({ ...prev, applicationsSent: data?.length || 0 }));
+      }
+    } catch (error) {
+      console.error('Error fetching applications:', error);
     }
-  ];
+  };
 
-  const savedJobs = [
-    {
-      id: 1,
-      title: "Product Manager",
-      company: "Future Tech",
-      location: "Austin, TX",
-      salary: "$130K - $170K",
-      posted: "2 days ago",
-      match: 95
-    },
-    {
-      id: 2,
-      title: "UX Designer",
-      company: "Design Studio",
-      location: "Los Angeles, CA",
-      salary: "$85K - $115K",
-      posted: "1 week ago",
-      match: 88
+  const fetchSavedJobs = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('saved_jobs')
+        .select(`
+          *,
+          job_postings (
+            id,
+            title,
+            company_name,
+            location,
+            salary_min,
+            salary_max,
+            posted_at
+          )
+        `)
+        .eq('user_id', user.id)
+        .order('saved_at', { ascending: false });
+
+      if (error) {
+        console.error('Error fetching saved jobs:', error);
+      } else {
+        setSavedJobs(data || []);
+        setStats(prev => ({ ...prev, savedJobsCount: data?.length || 0 }));
+      }
+    } catch (error) {
+      console.error('Error fetching saved jobs:', error);
     }
-  ];
+  };
 
-  const stats = [
-    { label: "Applications Sent", value: "23", icon: Send, change: "+5 this week" },
-    { label: "Interview Invites", value: "8", icon: Calendar, change: "+2 this week" },
-    { label: "Profile Views", value: "156", icon: Eye, change: "+23 this week" },
-    { label: "Saved Jobs", value: "12", icon: BookmarkIcon, change: "+3 this week" }
-  ];
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'selected': return 'bg-green-500';
+      case 'interviewed': return 'bg-blue-500';
+      case 'shortlisted': return 'bg-purple-500';
+      case 'reviewing': return 'bg-yellow-500';
+      case 'rejected': return 'bg-red-500';
+      default: return 'bg-gray-500';
+    }
+  };
 
-  if (!user) return null;
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || userProfile?.role !== 'job_seeker') {
+    return null;
+  }
+
+  const statsData = [
+    { label: "Applications Sent", value: stats.applicationsSent.toString(), icon: Send, change: "+5 this week" },
+    { label: "Interview Invites", value: "0", icon: Calendar, change: "+0 this week" },
+    { label: "Profile Views", value: "0", icon: Eye, change: "+0 this week" },
+    { label: "Saved Jobs", value: stats.savedJobsCount.toString(), icon: BookmarkIcon, change: `+${stats.savedJobsCount} total` }
+  ];
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -119,8 +157,15 @@ const JobseekerDashboard = () => {
                 AI Tools
               </Button>
             </Link>
+            <Button 
+              variant="ghost" 
+              className="text-white hover:bg-slate-800/50"
+              onClick={handleSignOut}
+            >
+              Sign Out
+            </Button>
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
-              <span className="text-sm font-bold">{user.fullName?.charAt(0) || 'U'}</span>
+              <span className="text-sm font-bold">{userProfile?.first_name?.charAt(0) || 'U'}</span>
             </div>
           </div>
         </div>
@@ -129,7 +174,7 @@ const JobseekerDashboard = () => {
       <div className="max-w-7xl mx-auto p-6">
         {/* Welcome Section */}
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2">Welcome back, {user.fullName}!</h1>
+          <h1 className="text-3xl font-bold mb-2">Welcome back, {userProfile?.first_name}!</h1>
           <p className="text-slate-400">Track your applications and discover new opportunities</p>
         </div>
 
@@ -155,7 +200,7 @@ const JobseekerDashboard = () => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => (
+          {statsData.map((stat, index) => (
             <Card key={stat.label} className="bg-slate-900/50 border-slate-800/50 backdrop-blur-xl transition-all duration-300 hover:bg-slate-800/50 hover:scale-105">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -184,44 +229,52 @@ const JobseekerDashboard = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {applications.map((app) => (
-                  <div key={app.id} className="bg-slate-800/50 rounded-xl p-4 transition-all duration-300 hover:bg-slate-700/50">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-start space-x-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center text-white font-bold">
-                          {app.logo}
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-white">{app.jobTitle}</h4>
-                          <p className="text-slate-400">{app.company}</p>
-                          <div className="flex items-center space-x-4 mt-1 text-sm text-slate-500">
-                            <span className="flex items-center">
-                              <MapPin className="w-4 h-4 mr-1" />
-                              {app.location}
-                            </span>
-                            <span className="flex items-center">
-                              <DollarSign className="w-4 h-4 mr-1" />
-                              {app.salary}
-                            </span>
+                {applications.length > 0 ? (
+                  applications.map((app) => (
+                    <div key={app.id} className="bg-slate-800/50 rounded-xl p-4 transition-all duration-300 hover:bg-slate-700/50">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-start space-x-3">
+                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center text-white font-bold">
+                            {app.job_postings?.company_name?.charAt(0) || 'C'}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-white">{app.job_postings?.title}</h4>
+                            <p className="text-slate-400">{app.job_postings?.company_name}</p>
+                            <div className="flex items-center space-x-4 mt-1 text-sm text-slate-500">
+                              <span className="flex items-center">
+                                <MapPin className="w-4 h-4 mr-1" />
+                                {app.job_postings?.location}
+                              </span>
+                              <span className="flex items-center">
+                                <DollarSign className="w-4 h-4 mr-1" />
+                                ${app.job_postings?.salary_min}k - ${app.job_postings?.salary_max}k
+                              </span>
+                            </div>
                           </div>
                         </div>
+                        <Badge className={`${getStatusColor(app.status)} text-white`}>
+                          {app.status}
+                        </Badge>
                       </div>
-                      <Badge className={`${app.statusColor} text-white`}>
-                        {app.status}
-                      </Badge>
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="text-slate-400">Applied {new Date(app.applied_at).toLocaleDateString()}</span>
+                        <Button size="sm" variant="ghost" className="text-blue-400 hover:text-blue-300">
+                          View Details
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-slate-400">Applied {app.appliedDate}</span>
-                      <Button size="sm" variant="ghost" className="text-blue-400 hover:text-blue-300">
-                        View Details
-                      </Button>
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-slate-400">No applications yet. Start applying to jobs!</p>
                   </div>
-                ))}
+                )}
                 
-                <Button className="w-full bg-slate-800/50 hover:bg-slate-700/50 text-white border-slate-700">
-                  View All Applications
-                </Button>
+                <Link to="/jobs">
+                  <Button className="w-full bg-slate-800/50 hover:bg-slate-700/50 text-white border-slate-700">
+                    Browse More Jobs
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </div>
@@ -237,21 +290,22 @@ const JobseekerDashboard = () => {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {savedJobs.map((job) => (
-                  <div key={job.id} className="bg-slate-800/50 rounded-lg p-4 transition-all duration-300 hover:bg-slate-700/50">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="font-medium text-white text-sm">{job.title}</h4>
-                      <Badge variant="outline" className="text-green-400 border-green-400">
-                        {job.match}% match
-                      </Badge>
+                {savedJobs.length > 0 ? (
+                  savedJobs.slice(0, 3).map((savedJob) => (
+                    <div key={savedJob.id} className="bg-slate-800/50 rounded-lg p-4 transition-all duration-300 hover:bg-slate-700/50">
+                      <h4 className="font-medium text-white text-sm">{savedJob.job_postings?.title}</h4>
+                      <p className="text-slate-400 text-sm">{savedJob.job_postings?.company_name}</p>
+                      <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
+                        <span>{savedJob.job_postings?.location}</span>
+                        <span>{new Date(savedJob.job_postings?.posted_at).toLocaleDateString()}</span>
+                      </div>
                     </div>
-                    <p className="text-slate-400 text-sm">{job.company}</p>
-                    <div className="flex items-center justify-between mt-2 text-xs text-slate-500">
-                      <span>{job.location}</span>
-                      <span>{job.posted}</span>
-                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-slate-400 text-sm">No saved jobs yet</p>
                   </div>
-                ))}
+                )}
                 
                 <Button size="sm" className="w-full bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white border-0">
                   View All Saved

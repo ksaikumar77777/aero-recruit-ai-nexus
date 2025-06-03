@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,14 +25,19 @@ const Auth = () => {
   });
   const { toast } = useToast();
   const navigate = useNavigate();
-  const { signIn, signUp, user, loading } = useAuth();
+  const { signIn, signUp, user, loading, userProfile } = useAuth();
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (!loading && user) {
-      navigate('/');
+    if (!loading && user && userProfile) {
+      console.log('Redirecting authenticated user with profile:', userProfile);
+      if (userProfile.role === 'hr') {
+        navigate('/hr/dashboard');
+      } else {
+        navigate('/jobseeker/dashboard');
+      }
     }
-  }, [user, loading, navigate]);
+  }, [user, loading, navigate, userProfile]);
 
   const calculatePasswordStrength = (password: string) => {
     let strength = 0;
@@ -52,7 +56,7 @@ const Auth = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!selectedRole) {
+    if (!isLogin && !selectedRole) {
       toast({
         title: "Role Required",
         description: "Please select a role to continue.",
@@ -65,12 +69,14 @@ const Auth = () => {
 
     try {
       if (isLogin) {
+        console.log('Attempting login');
         const { error } = await signIn(formData.email, formData.password);
         
         if (error) {
+          console.error('Login error:', error);
           toast({
             title: "Sign In Failed",
-            description: error.message,
+            description: error.message || "Invalid email or password",
             variant: "destructive"
           });
           return;
@@ -125,12 +131,14 @@ const Auth = () => {
           ...(selectedRole === 'hr' && { company_name: formData.companyName })
         };
 
+        console.log('Attempting signup with userData:', userData);
         const { error } = await signUp(formData.email, formData.password, userData);
         
         if (error) {
+          console.error('Signup error:', error);
           toast({
             title: "Sign Up Failed",
-            description: error.message,
+            description: error.message || "Failed to create account",
             variant: "destructive"
           });
           return;
@@ -142,6 +150,7 @@ const Auth = () => {
         });
       }
     } catch (error: any) {
+      console.error('Auth error:', error);
       toast({
         title: "Authentication Error",
         description: error.message || "An unexpected error occurred.",

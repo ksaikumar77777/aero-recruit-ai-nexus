@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import JobseekerDashboard from "./pages/JobseekerDashboard";
 import HRDashboard from "./pages/HRDashboard";
 import Jobs from "./pages/Jobs";
+import CreateJob from "./pages/CreateJob";
 import AITools from "./pages/AITools";
 import NotFound from "./pages/NotFound";
 
@@ -26,6 +27,7 @@ const App = () => (
             <Route path="/" element={<Index />} />
             <Route path="/auth" element={<Auth />} />
             <Route path="/jobs" element={<Jobs />} />
+            <Route path="/create-job" element={<CreateJob />} />
             <Route path="/ai-tools" element={<AITools />} />
             <Route path="/jobseeker/dashboard" element={<JobseekerDashboard />} />
             <Route path="/hr/dashboard" element={<HRDashboard />} />

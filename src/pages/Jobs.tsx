@@ -8,6 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Search, MapPin, Clock, Briefcase, DollarSign, Filter, BookmarkIcon, Eye, Star, Building, Users, Calendar } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
+import { useToast } from "@/hooks/use-toast";
 
 const Jobs = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -15,93 +18,43 @@ const Jobs = () => {
   const [selectedJobTypes, setSelectedJobTypes] = useState<string[]>([]);
   const [selectedExperience, setSelectedExperience] = useState<string[]>([]);
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [user, setUser] = useState<any>(null);
+  const [jobs, setJobs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { user, userProfile } = useAuth();
+  const { toast } = useToast();
   const navigate = useNavigate();
 
+  const jobTypes = ['full_time', 'part_time', 'contract', 'internship'];
+  const experienceLevels = ['entry', 'mid', 'senior', 'executive'];
+
   useEffect(() => {
-    const userData = localStorage.getItem('atsUser');
-    if (userData) {
-      setUser(JSON.parse(userData));
-    }
+    fetchJobs();
   }, []);
 
-  const jobTypes = ['Full-time', 'Part-time', 'Contract', 'Remote', 'Hybrid'];
-  const experienceLevels = ['Entry Level', 'Mid Level', 'Senior Level', 'Executive'];
+  const fetchJobs = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('job_postings')
+        .select('*')
+        .eq('is_active', true)
+        .order('posted_at', { ascending: false });
 
-  const jobs = [
-    {
-      id: 1,
-      title: "Senior Frontend Developer",
-      company: "TechCorp Inc.",
-      location: "San Francisco, CA",
-      type: "Full-time",
-      experience: "Senior Level",
-      salary: "$120K - $160K",
-      posted: "2 days ago",
-      description: "Join our team to build next-generation web applications using React, TypeScript, and modern tools.",
-      requirements: ["5+ years React experience", "TypeScript proficiency", "GraphQL knowledge"],
-      benefits: ["Health insurance", "401k matching", "Flexible PTO"],
-      applicants: 23,
-      match: 95,
-      logo: "TC",
-      remote: true,
-      urgent: false
-    },
-    {
-      id: 2,
-      title: "Product Manager",
-      company: "Innovation Labs",
-      location: "New York, NY",
-      type: "Full-time",
-      experience: "Mid Level",
-      salary: "$130K - $170K",
-      posted: "1 day ago",
-      description: "Lead product strategy and work with cross-functional teams to deliver amazing user experiences.",
-      requirements: ["3+ years product management", "Data-driven mindset", "B2B SaaS experience"],
-      benefits: ["Stock options", "Health insurance", "Learning budget"],
-      applicants: 45,
-      match: 88,
-      logo: "IL",
-      remote: false,
-      urgent: true
-    },
-    {
-      id: 3,
-      title: "UX Designer",
-      company: "Design Studio",
-      location: "Remote",
-      type: "Contract",
-      experience: "Mid Level",
-      salary: "$85K - $115K",
-      posted: "3 days ago",
-      description: "Create beautiful and intuitive user experiences for our mobile and web applications.",
-      requirements: ["UX/UI design experience", "Figma proficiency", "User research skills"],
-      benefits: ["Flexible schedule", "Remote work", "Design tools provided"],
-      applicants: 31,
-      match: 92,
-      logo: "DS",
-      remote: true,
-      urgent: false
-    },
-    {
-      id: 4,
-      title: "DevOps Engineer",
-      company: "CloudTech Solutions",
-      location: "Austin, TX",
-      type: "Full-time",
-      experience: "Senior Level",
-      salary: "$140K - $180K",
-      posted: "5 days ago",
-      description: "Build and maintain scalable infrastructure using modern DevOps practices and cloud technologies.",
-      requirements: ["AWS/Azure experience", "Kubernetes knowledge", "CI/CD expertise"],
-      benefits: ["Stock options", "Health insurance", "Conference budget"],
-      applicants: 18,
-      match: 85,
-      logo: "CT",
-      remote: false,
-      urgent: false
+      if (error) {
+        console.error('Error fetching jobs:', error);
+        toast({
+          title: "Error",
+          description: "Failed to load jobs. Please try again.",
+          variant: "destructive"
+        });
+      } else {
+        setJobs(data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching jobs:', error);
+    } finally {
+      setLoading(false);
     }
-  ];
+  };
 
   const toggleJobType = (type: string) => {
     setSelectedJobTypes(prev => 
@@ -121,12 +74,127 @@ const Jobs = () => {
 
   const filteredJobs = jobs.filter(job => {
     const matchesSearch = job.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         job.company.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesJobType = selectedJobTypes.length === 0 || selectedJobTypes.includes(job.type);
-    const matchesExperience = selectedExperience.length === 0 || selectedExperience.includes(job.experience);
+                         job.company_name.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesJobType = selectedJobTypes.length === 0 || selectedJobTypes.includes(job.job_type);
+    const matchesExperience = selectedExperience.length === 0 || selectedExperience.includes(job.experience_level);
     
     return matchesSearch && matchesJobType && matchesExperience;
   });
+
+  const handleApply = async (jobId: string) => {
+    if (!user || userProfile?.role !== 'job_seeker') {
+      navigate('/auth');
+      return;
+    }
+
+    try {
+      // Check if already applied
+      const { data: existingApplication } = await supabase
+        .from('candidates')
+        .select('id')
+        .eq('job_id', jobId)
+        .eq('candidate_id', user.id)
+        .single();
+
+      if (existingApplication) {
+        toast({
+          title: "Already Applied",
+          description: "You have already applied to this job.",
+          variant: "destructive"
+        });
+        return;
+      }
+
+      // Create application
+      const { error } = await supabase
+        .from('candidates')
+        .insert({
+          job_id: jobId,
+          candidate_id: user.id,
+          resume_url: userProfile?.job_seekers?.[0]?.resume_url || '',
+          status: 'applied'
+        });
+
+      if (error) {
+        console.error('Error applying to job:', error);
+        toast({
+          title: "Application Failed",
+          description: "Failed to submit application. Please try again.",
+          variant: "destructive"
+        });
+      } else {
+        toast({
+          title: "Application Submitted!",
+          description: "Your application has been successfully submitted.",
+        });
+        
+        // Refresh jobs to update application count
+        fetchJobs();
+      }
+    } catch (error) {
+      console.error('Error applying to job:', error);
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleSaveJob = async (jobId: string) => {
+    if (!user) {
+      navigate('/auth');
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from('saved_jobs')
+        .insert({
+          user_id: user.id,
+          job_id: jobId
+        });
+
+      if (error) {
+        if (error.code === '23505') { // unique violation
+          toast({
+            title: "Already Saved",
+            description: "This job is already in your saved jobs.",
+            variant: "destructive"
+          });
+        } else {
+          toast({
+            title: "Error",
+            description: "Failed to save job. Please try again.",
+            variant: "destructive"
+          });
+        }
+      } else {
+        toast({
+          title: "Job Saved!",
+          description: "Job added to your saved jobs.",
+        });
+      }
+    } catch (error) {
+      console.error('Error saving job:', error);
+    }
+  };
+
+  const formatJobType = (type: string) => {
+    return type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+  };
+
+  const formatExperienceLevel = (level: string) => {
+    return level.charAt(0).toUpperCase() + level.slice(1) + ' Level';
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -145,13 +213,13 @@ const Jobs = () => {
           <div className="flex items-center space-x-4">
             {user ? (
               <>
-                <Link to={user.role === 'jobseeker' ? '/jobseeker/dashboard' : '/hr/dashboard'}>
+                <Link to={userProfile?.role === 'job_seeker' ? '/jobseeker/dashboard' : '/hr/dashboard'}>
                   <Button variant="ghost" className="text-white hover:bg-slate-800/50">
                     Dashboard
                   </Button>
                 </Link>
                 <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
-                  <span className="text-sm font-bold">{user.fullName?.charAt(0) || 'U'}</span>
+                  <span className="text-sm font-bold">{userProfile?.first_name?.charAt(0) || 'U'}</span>
                 </div>
               </>
             ) : (
@@ -235,7 +303,7 @@ const Jobs = () => {
                             onChange={() => toggleJobType(type)}
                             className="mr-2 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
                           />
-                          <span className="text-slate-300">{type}</span>
+                          <span className="text-slate-300">{formatJobType(type)}</span>
                         </label>
                       ))}
                     </div>
@@ -253,7 +321,7 @@ const Jobs = () => {
                             onChange={() => toggleExperience(level)}
                             className="mr-2 rounded border-slate-600 bg-slate-800 text-blue-500 focus:ring-blue-500"
                           />
-                          <span className="text-slate-300">{level}</span>
+                          <span className="text-slate-300">{formatExperienceLevel(level)}</span>
                         </label>
                       ))}
                     </div>
@@ -270,116 +338,106 @@ const Jobs = () => {
             <h2 className="text-2xl font-bold text-white">{filteredJobs.length} Jobs Found</h2>
             <p className="text-slate-400">Showing the best matches for your search</p>
           </div>
-          <div className="flex items-center space-x-2">
-            <span className="text-slate-400">Sort by:</span>
-            <Button variant="ghost" size="sm" className="text-blue-400 hover:text-blue-300">
-              Relevance
-            </Button>
-          </div>
         </div>
 
         {/* Job Listings */}
         <div className="space-y-6">
-          {filteredJobs.map((job, index) => (
-            <Card
-              key={job.id}
-              className="bg-slate-900/50 border-slate-800/50 backdrop-blur-xl transition-all duration-300 hover:bg-slate-800/50 hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/10"
-              style={{ animationDelay: `${index * 100}ms` }}
-            >
-              <CardContent className="p-6">
-                <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-start space-x-4 mb-4">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center text-white font-bold">
-                        {job.logo}
-                      </div>
-                      <div className="flex-1">
-                        <div className="flex items-center space-x-2 mb-2">
-                          <h3 className="text-xl font-bold text-white">{job.title}</h3>
-                          {job.urgent && (
-                            <Badge className="bg-red-500 text-white">Urgent</Badge>
-                          )}
-                          {job.remote && (
-                            <Badge className="bg-green-500 text-white">Remote</Badge>
-                          )}
+          {filteredJobs.length > 0 ? (
+            filteredJobs.map((job, index) => (
+              <Card
+                key={job.id}
+                className="bg-slate-900/50 border-slate-800/50 backdrop-blur-xl transition-all duration-300 hover:bg-slate-800/50 hover:scale-[1.02] hover:shadow-xl hover:shadow-blue-500/10"
+              >
+                <CardContent className="p-6">
+                  <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-start space-x-4 mb-4">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center text-white font-bold">
+                          {job.company_name.charAt(0)}
                         </div>
-                        <p className="text-slate-400 font-medium">{job.company}</p>
-                        <div className="flex items-center space-x-6 mt-2 text-sm text-slate-500">
-                          <span className="flex items-center">
-                            <MapPin className="w-4 h-4 mr-1" />
-                            {job.location}
-                          </span>
-                          <span className="flex items-center">
-                            <DollarSign className="w-4 h-4 mr-1" />
-                            {job.salary}
-                          </span>
-                          <span className="flex items-center">
-                            <Clock className="w-4 h-4 mr-1" />
-                            {job.posted}
-                          </span>
-                          <span className="flex items-center">
-                            <Users className="w-4 h-4 mr-1" />
-                            {job.applicants} applicants
-                          </span>
+                        <div className="flex-1">
+                          <div className="flex items-center space-x-2 mb-2">
+                            <h3 className="text-xl font-bold text-white">{job.title}</h3>
+                            {job.remote_allowed && (
+                              <Badge className="bg-green-500 text-white">Remote</Badge>
+                            )}
+                          </div>
+                          <p className="text-slate-400 font-medium">{job.company_name}</p>
+                          <div className="flex items-center space-x-6 mt-2 text-sm text-slate-500">
+                            <span className="flex items-center">
+                              <MapPin className="w-4 h-4 mr-1" />
+                              {job.location}
+                            </span>
+                            {job.salary_min && job.salary_max && (
+                              <span className="flex items-center">
+                                <DollarSign className="w-4 h-4 mr-1" />
+                                ${job.salary_min}k - ${job.salary_max}k
+                              </span>
+                            )}
+                            <span className="flex items-center">
+                              <Clock className="w-4 h-4 mr-1" />
+                              {new Date(job.posted_at).toLocaleDateString()}
+                            </span>
+                            <span className="flex items-center">
+                              <Users className="w-4 h-4 mr-1" />
+                              {job.application_count || 0} applicants
+                            </span>
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <p className="text-slate-300 mb-4 leading-relaxed">{job.description}</p>
+                      <p className="text-slate-300 mb-4 leading-relaxed">{job.description}</p>
 
-                    <div className="flex items-center space-x-4 text-sm">
-                      <Badge variant="outline" className="text-slate-300 border-slate-600">
-                        {job.type}
-                      </Badge>
-                      <Badge variant="outline" className="text-slate-300 border-slate-600">
-                        {job.experience}
-                      </Badge>
-                      {user && user.role === 'jobseeker' && (
-                        <Badge variant="outline" className="text-emerald-400 border-emerald-400">
-                          {job.match}% match
+                      <div className="flex items-center space-x-4 text-sm">
+                        <Badge variant="outline" className="text-slate-300 border-slate-600">
+                          {formatJobType(job.job_type)}
                         </Badge>
+                        <Badge variant="outline" className="text-slate-300 border-slate-600">
+                          {formatExperienceLevel(job.experience_level)}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col space-y-3 mt-4 lg:mt-0 lg:ml-6">
+                      {user && userProfile?.role === 'job_seeker' ? (
+                        <>
+                          <Button 
+                            className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white border-0 transition-all duration-300 hover:scale-105"
+                            onClick={() => handleApply(job.id)}
+                          >
+                            Apply Now
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            className="text-white border-slate-600 hover:bg-slate-800/50"
+                            onClick={() => handleSaveJob(job.id)}
+                          >
+                            <BookmarkIcon className="w-4 h-4 mr-2" />
+                            Save
+                          </Button>
+                        </>
+                      ) : (
+                        <Link to="/auth">
+                          <Button className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white border-0 transition-all duration-300 hover:scale-105">
+                            Sign in to Apply
+                          </Button>
+                        </Link>
                       )}
+                      <Button variant="ghost" className="text-slate-400 hover:text-white">
+                        <Eye className="w-4 h-4 mr-2" />
+                        View Details
+                      </Button>
                     </div>
                   </div>
-
-                  <div className="flex flex-col space-y-3 mt-4 lg:mt-0 lg:ml-6">
-                    {user && user.role === 'jobseeker' ? (
-                      <>
-                        <Button className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white border-0 transition-all duration-300 hover:scale-105">
-                          Apply Now
-                        </Button>
-                        <Button variant="outline" className="text-white border-slate-600 hover:bg-slate-800/50">
-                          <BookmarkIcon className="w-4 h-4 mr-2" />
-                          Save
-                        </Button>
-                      </>
-                    ) : (
-                      <Link to="/auth">
-                        <Button className="bg-gradient-to-r from-blue-500 to-cyan-500 hover:from-blue-600 hover:to-cyan-600 text-white border-0 transition-all duration-300 hover:scale-105">
-                          Sign in to Apply
-                        </Button>
-                      </Link>
-                    )}
-                    <Button variant="ghost" className="text-slate-400 hover:text-white">
-                      <Eye className="w-4 h-4 mr-2" />
-                      View Details
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Load More */}
-        <div className="text-center mt-12">
-          <Button
-            variant="outline"
-            size="lg"
-            className="text-white border-slate-600 hover:bg-slate-800/50"
-          >
-            Load More Jobs
-          </Button>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <div className="text-center py-12">
+              <p className="text-slate-400 text-lg">No jobs found matching your criteria.</p>
+              <p className="text-slate-500 mt-2">Try adjusting your search or filters.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

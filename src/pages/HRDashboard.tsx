@@ -6,142 +6,153 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Search, Briefcase, Users, TrendingUp, Calendar, Plus, Filter, Eye, MessageSquare, Star, Clock, CheckCircle, AlertTriangle } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/hooks/useAuth';
+import { supabase } from '@/integrations/supabase/client';
 
 const HRDashboard = () => {
-  const [user, setUser] = useState<any>(null);
+  const { user, userProfile, signOut, loading } = useAuth();
+  const [jobPostings, setJobPostings] = useState<any[]>([]);
+  const [recentCandidates, setRecentCandidates] = useState<any[]>([]);
+  const [stats, setStats] = useState({
+    activeJobs: 0,
+    totalApplications: 0,
+    interviewsScheduled: 0,
+    hireRate: 0
+  });
   const navigate = useNavigate();
 
   useEffect(() => {
-    const userData = localStorage.getItem('atsUser');
-    if (!userData) {
+    if (!loading && (!user || userProfile?.role !== 'hr')) {
       navigate('/auth');
       return;
     }
-    
-    const parsedUser = JSON.parse(userData);
-    if (parsedUser.role !== 'hr') {
-      navigate('/jobseeker/dashboard');
-      return;
-    }
-    
-    setUser(parsedUser);
-  }, [navigate]);
 
-  const stats = [
+    if (user && userProfile?.role === 'hr') {
+      fetchJobPostings();
+      fetchRecentCandidates();
+    }
+  }, [user, userProfile, loading, navigate]);
+
+  const fetchJobPostings = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('job_postings')
+        .select('*')
+        .eq('created_by', user.id)
+        .order('created_at', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error('Error fetching job postings:', error);
+      } else {
+        setJobPostings(data || []);
+        const activeJobs = data?.filter(job => job.is_active).length || 0;
+        const totalApplications = data?.reduce((sum, job) => sum + (job.application_count || 0), 0) || 0;
+        setStats(prev => ({
+          ...prev,
+          activeJobs,
+          totalApplications
+        }));
+      }
+    } catch (error) {
+      console.error('Error fetching job postings:', error);
+    }
+  };
+
+  const fetchRecentCandidates = async () => {
+    if (!user) return;
+
+    try {
+      const { data, error } = await supabase
+        .from('candidates')
+        .select(`
+          *,
+          job_postings!inner (
+            id,
+            title,
+            created_by
+          ),
+          profiles!candidates_candidate_id_fkey (
+            first_name,
+            last_name
+          )
+        `)
+        .eq('job_postings.created_by', user.id)
+        .order('applied_at', { ascending: false })
+        .limit(5);
+
+      if (error) {
+        console.error('Error fetching candidates:', error);
+      } else {
+        setRecentCandidates(data || []);
+      }
+    } catch (error) {
+      console.error('Error fetching candidates:', error);
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'bg-green-500';
+      case 'paused': return 'bg-yellow-500';
+      case 'selected': return 'bg-blue-500';
+      case 'interviewed': return 'bg-purple-500';
+      case 'shortlisted': return 'bg-cyan-500';
+      case 'reviewing': return 'bg-orange-500';
+      case 'rejected': return 'bg-red-500';
+      default: return 'bg-gray-500';
+    }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate('/');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!user || userProfile?.role !== 'hr') {
+    return null;
+  }
+
+  const statsData = [
     {
       label: "Active Jobs",
-      value: "12",
-      change: "+3 this month",
+      value: stats.activeJobs.toString(),
+      change: `+${stats.activeJobs} total`,
       icon: Briefcase,
       color: "from-blue-500 to-cyan-500"
     },
     {
       label: "Total Applications",
-      value: "248",
-      change: "+45 this week",
+      value: stats.totalApplications.toString(),
+      change: `+${stats.totalApplications} total`,
       icon: Users,
       color: "from-emerald-500 to-teal-500"
     },
     {
       label: "Interviews Scheduled",
-      value: "18",
-      change: "+8 this week",
+      value: "0",
+      change: "+0 this week",
       icon: Calendar,
       color: "from-purple-500 to-pink-500"
     },
     {
       label: "Hire Rate",
-      value: "23%",
-      change: "+2% this month",
+      value: "0%",
+      change: "No hires yet",
       icon: TrendingUp,
       color: "from-orange-500 to-red-500"
     }
   ];
-
-  const recentJobs = [
-    {
-      id: 1,
-      title: "Senior React Developer",
-      department: "Engineering",
-      applicants: 34,
-      status: "Active",
-      posted: "3 days ago",
-      priority: "High"
-    },
-    {
-      id: 2,
-      title: "Product Designer",
-      department: "Design",
-      applicants: 28,
-      status: "Active",
-      posted: "1 week ago",
-      priority: "Medium"
-    },
-    {
-      id: 3,
-      title: "Marketing Manager",
-      department: "Marketing",
-      applicants: 19,
-      status: "Paused",
-      posted: "2 weeks ago",
-      priority: "Low"
-    }
-  ];
-
-  const recentCandidates = [
-    {
-      id: 1,
-      name: "Sarah Johnson",
-      position: "Senior React Developer",
-      status: "Interview Scheduled",
-      score: 95,
-      experience: "5 years",
-      location: "San Francisco, CA",
-      appliedDate: "2024-01-15"
-    },
-    {
-      id: 2,
-      name: "Michael Chen",
-      position: "Product Designer",
-      status: "Under Review",
-      score: 88,
-      experience: "3 years",
-      location: "New York, NY",
-      appliedDate: "2024-01-14"
-    },
-    {
-      id: 3,
-      name: "Emily Rodriguez",
-      position: "Marketing Manager",
-      status: "Phone Screen",
-      score: 92,
-      experience: "7 years",
-      location: "Austin, TX",
-      appliedDate: "2024-01-13"
-    }
-  ];
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'Active': return 'bg-green-500';
-      case 'Paused': return 'bg-yellow-500';
-      case 'Interview Scheduled': return 'bg-blue-500';
-      case 'Under Review': return 'bg-purple-500';
-      case 'Phone Screen': return 'bg-cyan-500';
-      default: return 'bg-gray-500';
-    }
-  };
-
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'High': return 'text-red-400';
-      case 'Medium': return 'text-yellow-400';
-      case 'Low': return 'text-green-400';
-      default: return 'text-gray-400';
-    }
-  };
-
-  if (!user) return null;
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
@@ -158,23 +169,20 @@ const HRDashboard = () => {
           </Link>
           
           <div className="flex items-center space-x-4">
-            <Link to="/hr/jobs">
-              <Button variant="ghost" className="text-white hover:bg-slate-800/50">
-                Manage Jobs
-              </Button>
-            </Link>
-            <Link to="/hr/candidates">
-              <Button variant="ghost" className="text-white hover:bg-slate-800/50">
-                Candidates
-              </Button>
-            </Link>
             <Link to="/ai-tools">
               <Button variant="ghost" className="text-white hover:bg-slate-800/50">
                 AI Tools
               </Button>
             </Link>
+            <Button 
+              variant="ghost" 
+              className="text-white hover:bg-slate-800/50"
+              onClick={handleSignOut}
+            >
+              Sign Out
+            </Button>
             <div className="w-8 h-8 bg-gradient-to-br from-emerald-500 to-teal-500 rounded-full flex items-center justify-center">
-              <span className="text-sm font-bold">{user.fullName?.charAt(0) || 'U'}</span>
+              <span className="text-sm font-bold">{userProfile?.first_name?.charAt(0) || 'U'}</span>
             </div>
           </div>
         </div>
@@ -184,20 +192,15 @@ const HRDashboard = () => {
         {/* Welcome Section */}
         <div className="flex items-center justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold mb-2">Welcome back, {user.fullName}!</h1>
+            <h1 className="text-3xl font-bold mb-2">Welcome back, {userProfile?.first_name}!</h1>
             <p className="text-slate-400">Manage your recruitment pipeline with ease</p>
           </div>
-          <Link to="/hr/jobs/create">
-            <Button className="bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white border-0 transition-all duration-300 hover:scale-105">
-              <Plus className="w-4 h-4 mr-2" />
-              Post New Job
-            </Button>
-          </Link>
+          <CreateJobButton />
         </div>
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          {stats.map((stat, index) => (
+          {statsData.map((stat, index) => (
             <Card key={stat.label} className="bg-slate-900/50 border-slate-800/50 backdrop-blur-xl transition-all duration-300 hover:bg-slate-800/50 hover:scale-105">
               <CardContent className="p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -225,108 +228,99 @@ const HRDashboard = () => {
                     <Briefcase className="w-5 h-5 mr-2" />
                     Recent Job Postings
                   </CardTitle>
-                  <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
-                    <Eye className="w-4 h-4 mr-1" />
-                    View All
-                  </Button>
+                  <CreateJobButton variant="ghost" size="sm" />
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
-                {recentJobs.map((job) => (
-                  <div key={job.id} className="bg-slate-800/50 rounded-xl p-4 transition-all duration-300 hover:bg-slate-700/50">
-                    <div className="flex items-start justify-between mb-3">
-                      <div>
-                        <h4 className="font-semibold text-white">{job.title}</h4>
-                        <p className="text-slate-400 text-sm">{job.department}</p>
-                        <div className="flex items-center space-x-4 mt-2">
-                          <span className="text-sm text-slate-500 flex items-center">
-                            <Users className="w-4 h-4 mr-1" />
-                            {job.applicants} applicants
-                          </span>
-                          <span className="text-sm text-slate-500 flex items-center">
-                            <Clock className="w-4 h-4 mr-1" />
-                            {job.posted}
-                          </span>
-                          <span className={`text-sm ${getPriorityColor(job.priority)}`}>
-                            {job.priority} Priority
-                          </span>
+                {jobPostings.length > 0 ? (
+                  jobPostings.map((job) => (
+                    <div key={job.id} className="bg-slate-800/50 rounded-xl p-4 transition-all duration-300 hover:bg-slate-700/50">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <h4 className="font-semibold text-white">{job.title}</h4>
+                          <p className="text-slate-400 text-sm">{job.company_name}</p>
+                          <div className="flex items-center space-x-4 mt-2">
+                            <span className="text-sm text-slate-500 flex items-center">
+                              <Users className="w-4 h-4 mr-1" />
+                              {job.application_count || 0} applicants
+                            </span>
+                            <span className="text-sm text-slate-500 flex items-center">
+                              <Clock className="w-4 h-4 mr-1" />
+                              {new Date(job.posted_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end space-y-2">
+                          <Badge className={`${getStatusColor(job.is_active ? 'active' : 'paused')} text-white`}>
+                            {job.is_active ? 'Active' : 'Paused'}
+                          </Badge>
+                          <Button size="sm" variant="ghost" className="text-blue-400 hover:text-blue-300">
+                            Manage
+                          </Button>
                         </div>
                       </div>
-                      <div className="flex flex-col items-end space-y-2">
-                        <Badge className={`${getStatusColor(job.status)} text-white`}>
-                          {job.status}
-                        </Badge>
-                        <Button size="sm" variant="ghost" className="text-blue-400 hover:text-blue-300">
-                          Manage
-                        </Button>
-                      </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-slate-400">No job postings yet. Create your first job posting!</p>
+                    <CreateJobButton className="mt-4" />
                   </div>
-                ))}
+                )}
               </CardContent>
             </Card>
 
             {/* Recent Candidates */}
             <Card className="bg-slate-900/50 border-slate-800/50 backdrop-blur-xl mt-6">
               <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-white flex items-center">
-                    <Users className="w-5 h-5 mr-2" />
-                    Recent Candidates
-                  </CardTitle>
-                  <div className="flex items-center space-x-2">
-                    <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
-                      <Filter className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="sm" className="text-slate-400 hover:text-white">
-                      <Eye className="w-4 h-4 mr-1" />
-                      View All
-                    </Button>
-                  </div>
-                </div>
+                <CardTitle className="text-white flex items-center">
+                  <Users className="w-5 h-5 mr-2" />
+                  Recent Candidates
+                </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {recentCandidates.map((candidate) => (
-                  <div key={candidate.id} className="bg-slate-800/50 rounded-xl p-4 transition-all duration-300 hover:bg-slate-700/50">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-start space-x-3">
-                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center text-white font-bold">
-                          {candidate.name.split(' ').map(n => n[0]).join('')}
-                        </div>
-                        <div>
-                          <h4 className="font-semibold text-white">{candidate.name}</h4>
-                          <p className="text-slate-400 text-sm">{candidate.position}</p>
-                          <div className="flex items-center space-x-4 mt-1 text-xs text-slate-500">
-                            <span>{candidate.experience} experience</span>
-                            <span>{candidate.location}</span>
-                            <span>Applied {candidate.appliedDate}</span>
+                {recentCandidates.length > 0 ? (
+                  recentCandidates.map((candidate) => (
+                    <div key={candidate.id} className="bg-slate-800/50 rounded-xl p-4 transition-all duration-300 hover:bg-slate-700/50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start space-x-3">
+                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center text-white font-bold">
+                            {candidate.profiles?.first_name?.charAt(0) || 'C'}
+                          </div>
+                          <div>
+                            <h4 className="font-semibold text-white">
+                              {candidate.profiles?.first_name} {candidate.profiles?.last_name}
+                            </h4>
+                            <p className="text-slate-400 text-sm">{candidate.job_postings?.title}</p>
+                            <div className="flex items-center space-x-4 mt-1 text-xs text-slate-500">
+                              <span>Applied {new Date(candidate.applied_at).toLocaleDateString()}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="flex flex-col items-end space-y-2">
-                        <div className="flex items-center space-x-2">
-                          <Badge variant="outline" className="text-emerald-400 border-emerald-400">
-                            {candidate.score}% match
-                          </Badge>
+                        <div className="flex flex-col items-end space-y-2">
                           <Badge className={`${getStatusColor(candidate.status)} text-white`}>
                             {candidate.status}
                           </Badge>
-                        </div>
-                        <div className="flex space-x-1">
-                          <Button size="sm" variant="ghost" className="text-blue-400 hover:text-blue-300 p-1">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" variant="ghost" className="text-green-400 hover:text-green-300 p-1">
-                            <MessageSquare className="w-4 h-4" />
-                          </Button>
-                          <Button size="sm" variant="ghost" className="text-yellow-400 hover:text-yellow-300 p-1">
-                            <Star className="w-4 h-4" />
-                          </Button>
+                          <div className="flex space-x-1">
+                            <Button size="sm" variant="ghost" className="text-blue-400 hover:text-blue-300 p-1">
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-green-400 hover:text-green-300 p-1">
+                              <MessageSquare className="w-4 h-4" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="text-yellow-400 hover:text-yellow-300 p-1">
+                              <Star className="w-4 h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
+                  ))
+                ) : (
+                  <div className="text-center py-8">
+                    <p className="text-slate-400">No candidates yet. Your job postings will attract candidates soon!</p>
                   </div>
-                ))}
+                )}
               </CardContent>
             </Card>
           </div>
@@ -339,18 +333,11 @@ const HRDashboard = () => {
                 <CardTitle className="text-white">Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Link to="/hr/jobs/create">
-                  <Button className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white border-0">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Post New Job
-                  </Button>
-                </Link>
-                <Link to="/hr/candidates">
-                  <Button variant="outline" className="w-full text-white border-slate-600 hover:bg-slate-800/50">
-                    <Users className="w-4 h-4 mr-2" />
-                    Review Candidates
-                  </Button>
-                </Link>
+                <CreateJobButton className="w-full" />
+                <Button variant="outline" className="w-full text-white border-slate-600 hover:bg-slate-800/50">
+                  <Users className="w-4 h-4 mr-2" />
+                  Review Candidates
+                </Button>
                 <Link to="/ai-tools">
                   <Button variant="outline" className="w-full text-white border-slate-600 hover:bg-slate-800/50">
                     <Star className="w-4 h-4 mr-2" />
@@ -370,38 +357,26 @@ const HRDashboard = () => {
                 <CardTitle className="text-white">Recent Activity</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="flex items-start space-x-3">
-                  <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center">
-                    <CheckCircle className="w-4 h-4 text-green-400" />
+                {recentCandidates.length > 0 ? (
+                  recentCandidates.slice(0, 3).map((candidate) => (
+                    <div key={candidate.id} className="flex items-start space-x-3">
+                      <div className="w-8 h-8 bg-green-500/20 rounded-lg flex items-center justify-center">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                      </div>
+                      <div>
+                        <p className="text-sm text-white">New application received</p>
+                        <p className="text-xs text-slate-400">
+                          {candidate.profiles?.first_name} applied for {candidate.job_postings?.title}
+                        </p>
+                        <p className="text-xs text-slate-500">{new Date(candidate.applied_at).toLocaleDateString()}</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-center py-4">
+                    <p className="text-slate-400 text-sm">No recent activity</p>
                   </div>
-                  <div>
-                    <p className="text-sm text-white">New application received</p>
-                    <p className="text-xs text-slate-400">Sarah Johnson applied for Senior React Developer</p>
-                    <p className="text-xs text-slate-500">2 hours ago</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start space-x-3">
-                  <div className="w-8 h-8 bg-blue-500/20 rounded-lg flex items-center justify-center">
-                    <Calendar className="w-4 h-4 text-blue-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-white">Interview scheduled</p>
-                    <p className="text-xs text-slate-400">Michael Chen - Product Designer</p>
-                    <p className="text-xs text-slate-500">4 hours ago</p>
-                  </div>
-                </div>
-                
-                <div className="flex items-start space-x-3">
-                  <div className="w-8 h-8 bg-yellow-500/20 rounded-lg flex items-center justify-center">
-                    <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-white">Job posting expires soon</p>
-                    <p className="text-xs text-slate-400">Marketing Manager expires in 3 days</p>
-                    <p className="text-xs text-slate-500">1 day ago</p>
-                  </div>
-                </div>
+                )}
               </CardContent>
             </Card>
 
@@ -413,19 +388,19 @@ const HRDashboard = () => {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Applications</span>
-                  <span className="text-white font-semibold">248</span>
+                  <span className="text-white font-semibold">{stats.totalApplications}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Interviews</span>
-                  <span className="text-white font-semibold">45</span>
+                  <span className="text-white font-semibold">0</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Hires</span>
-                  <span className="text-white font-semibold">12</span>
+                  <span className="text-white font-semibold">0</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-slate-400">Time to Hire</span>
-                  <span className="text-green-400 font-semibold">18 days</span>
+                  <span className="text-green-400 font-semibold">-- days</span>
                 </div>
               </CardContent>
             </Card>
@@ -433,6 +408,28 @@ const HRDashboard = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// Create Job Button Component
+const CreateJobButton = ({ className = "", variant = "default", size = "default" }: any) => {
+  const navigate = useNavigate();
+  
+  const handleCreateJob = () => {
+    // For now, we'll show a simple alert. Later this can be a proper form modal or page
+    navigate('/create-job');
+  };
+
+  return (
+    <Button 
+      className={`bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white border-0 transition-all duration-300 hover:scale-105 ${className}`}
+      variant={variant}
+      size={size}
+      onClick={handleCreateJob}
+    >
+      <Plus className="w-4 h-4 mr-2" />
+      Post New Job
+    </Button>
   );
 };
 
