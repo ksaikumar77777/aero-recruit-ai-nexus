@@ -8,10 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Briefcase, Users, ArrowRight, Eye, EyeOff, CheckCircle, X, Mail, Lock, User } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from '@/hooks/useAuth';
 
 const Auth = () => {
   const [isLogin, setIsLogin] = useState(true);
-  const [selectedRole, setSelectedRole] = useState<'jobseeker' | 'hr' | null>(null);
+  const [selectedRole, setSelectedRole] = useState<'job_seeker' | 'hr' | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
@@ -19,11 +20,20 @@ const Auth = () => {
     email: '',
     password: '',
     confirmPassword: '',
-    fullName: '',
+    firstName: '',
+    lastName: '',
     companyName: ''
   });
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { signIn, signUp, user, loading } = useAuth();
+
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (!loading && user) {
+      navigate('/');
+    }
+  }, [user, loading, navigate]);
 
   const calculatePasswordStrength = (password: string) => {
     let strength = 0;
@@ -41,59 +51,110 @@ const Auth = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!selectedRole) {
+      toast({
+        title: "Role Required",
+        description: "Please select a role to continue.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsLoading(true);
-    
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    if (!isLogin && formData.password !== formData.confirmPassword) {
+
+    try {
+      if (isLogin) {
+        const { error } = await signIn(formData.email, formData.password);
+        
+        if (error) {
+          toast({
+            title: "Sign In Failed",
+            description: error.message,
+            variant: "destructive"
+          });
+          return;
+        }
+
+        toast({
+          title: "Welcome Back!",
+          description: "Successfully signed in to your account.",
+        });
+      } else {
+        // Validation for signup
+        if (formData.password !== formData.confirmPassword) {
+          toast({
+            title: "Password Mismatch",
+            description: "Passwords do not match. Please try again.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        if (passwordStrength < 3) {
+          toast({
+            title: "Weak Password",
+            description: "Please create a stronger password with at least 8 characters, uppercase, lowercase, and numbers.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        if (!formData.firstName || !formData.lastName) {
+          toast({
+            title: "Missing Information",
+            description: "Please provide your first and last name.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        if (selectedRole === 'hr' && !formData.companyName) {
+          toast({
+            title: "Company Name Required",
+            description: "Please provide your company name.",
+            variant: "destructive"
+          });
+          return;
+        }
+
+        const userData = {
+          role: selectedRole,
+          first_name: formData.firstName,
+          last_name: formData.lastName,
+          ...(selectedRole === 'hr' && { company_name: formData.companyName })
+        };
+
+        const { error } = await signUp(formData.email, formData.password, userData);
+        
+        if (error) {
+          toast({
+            title: "Sign Up Failed",
+            description: error.message,
+            variant: "destructive"
+          });
+          return;
+        }
+
+        toast({
+          title: "Account Created!",
+          description: "Please check your email to verify your account.",
+        });
+      }
+    } catch (error: any) {
       toast({
-        title: "Password Mismatch",
-        description: "Passwords do not match. Please try again.",
+        title: "Authentication Error",
+        description: error.message || "An unexpected error occurred.",
         variant: "destructive"
       });
+    } finally {
       setIsLoading(false);
-      return;
     }
-
-    if (!isLogin && passwordStrength < 3) {
-      toast({
-        title: "Weak Password",
-        description: "Please create a stronger password with at least 8 characters, uppercase, lowercase, and numbers.",
-        variant: "destructive"
-      });
-      setIsLoading(false);
-      return;
-    }
-
-    // Store user data in localStorage for demo
-    const userData = {
-      email: formData.email,
-      role: selectedRole,
-      fullName: formData.fullName,
-      companyName: formData.companyName,
-      isAuthenticated: true
-    };
-    localStorage.setItem('atsUser', JSON.stringify(userData));
-
-    toast({
-      title: isLogin ? "Welcome Back!" : "Account Created!",
-      description: isLogin ? "Successfully signed in to your account." : "Your account has been created successfully.",
-    });
-
-    // Navigate based on role
-    if (selectedRole === 'jobseeker') {
-      navigate('/jobseeker/dashboard');
-    } else {
-      navigate('/hr/dashboard');
-    }
-
-    setIsLoading(false);
   };
 
   const roleCards = [
     {
-      id: 'jobseeker',
+      id: 'job_seeker',
       title: 'Job Seeker',
       description: 'Find your dream job with AI-powered matching',
       icon: User,
@@ -121,6 +182,14 @@ const Auth = () => {
     if (passwordStrength <= 3) return 'Medium';
     return 'Strong';
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-white relative overflow-hidden">
@@ -158,7 +227,7 @@ const Auth = () => {
                   <Card
                     key={role.id}
                     className="group cursor-pointer bg-slate-900/50 border-slate-800/50 backdrop-blur-xl transition-all duration-300 hover:bg-slate-800/50 hover:scale-105 hover:shadow-2xl"
-                    onClick={() => setSelectedRole(role.id as 'jobseeker' | 'hr')}
+                    onClick={() => setSelectedRole(role.id as 'job_seeker' | 'hr')}
                   >
                     <CardContent className="p-8">
                       <div className={`w-16 h-16 rounded-2xl bg-gradient-to-r ${role.gradient} flex items-center justify-center mb-6 mx-auto transition-all duration-300 group-hover:scale-110 group-hover:rotate-6`}>
@@ -190,8 +259,8 @@ const Auth = () => {
                   ← Back to role selection
                 </Button>
                 
-                <Badge className={`mb-4 px-4 py-2 bg-gradient-to-r ${selectedRole === 'jobseeker' ? 'from-blue-500/20 to-cyan-500/20 text-blue-300 border-blue-500/30' : 'from-emerald-500/20 to-teal-500/20 text-emerald-300 border-emerald-500/30'}`}>
-                  {selectedRole === 'jobseeker' ? 'Job Seeker' : 'HR Professional'}
+                <Badge className={`mb-4 px-4 py-2 bg-gradient-to-r ${selectedRole === 'job_seeker' ? 'from-blue-500/20 to-cyan-500/20 text-blue-300 border-blue-500/30' : 'from-emerald-500/20 to-teal-500/20 text-emerald-300 border-emerald-500/30'}`}>
+                  {selectedRole === 'job_seeker' ? 'Job Seeker' : 'HR Professional'}
                 </Badge>
                 
                 <h1 className="text-3xl font-bold mb-2">
@@ -206,39 +275,52 @@ const Auth = () => {
                 <CardContent className="p-8">
                   <form onSubmit={handleSubmit} className="space-y-6">
                     {!isLogin && (
-                      <div className="space-y-2">
-                        <Label htmlFor="fullName" className="text-white">Full Name</Label>
-                        <div className="relative">
-                          <User className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                          <Input
-                            id="fullName"
-                            type="text"
-                            placeholder="Enter your full name"
-                            className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
-                            value={formData.fullName}
-                            onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-                            required
-                          />
+                      <>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="firstName" className="text-white">First Name</Label>
+                            <Input
+                              id="firstName"
+                              type="text"
+                              placeholder="First name"
+                              className="bg-slate-800/50 border-slate-700 text-white placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
+                              value={formData.firstName}
+                              onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
+                              required
+                            />
+                          </div>
+                          <div className="space-y-2">
+                            <Label htmlFor="lastName" className="text-white">Last Name</Label>
+                            <Input
+                              id="lastName"
+                              type="text"
+                              placeholder="Last name"
+                              className="bg-slate-800/50 border-slate-700 text-white placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
+                              value={formData.lastName}
+                              onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
+                              required
+                            />
+                          </div>
                         </div>
-                      </div>
-                    )}
 
-                    {!isLogin && selectedRole === 'hr' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="companyName" className="text-white">Company Name</Label>
-                        <div className="relative">
-                          <Briefcase className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                          <Input
-                            id="companyName"
-                            type="text"
-                            placeholder="Enter your company name"
-                            className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
-                            value={formData.companyName}
-                            onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
-                            required
-                          />
-                        </div>
-                      </div>
+                        {selectedRole === 'hr' && (
+                          <div className="space-y-2">
+                            <Label htmlFor="companyName" className="text-white">Company Name</Label>
+                            <div className="relative">
+                              <Briefcase className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
+                              <Input
+                                id="companyName"
+                                type="text"
+                                placeholder="Enter your company name"
+                                className="pl-10 bg-slate-800/50 border-slate-700 text-white placeholder-slate-400 focus:border-blue-500 focus:ring-blue-500"
+                                value={formData.companyName}
+                                onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+                                required
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </>
                     )}
 
                     <div className="space-y-2">
